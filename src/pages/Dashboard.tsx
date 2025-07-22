@@ -7,6 +7,7 @@ const Dashboard: React.FC = () => {
   const [dueCards, setDueCards] = useState<VocabCard[]>([]);
   const [stats, setStats] = useState<StatsOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [nextDue, setNextDue] = useState<{ hours: number|null, minutes: number|null } | null>(null);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -19,6 +20,13 @@ const Dashboard: React.FC = () => {
         // Lấy các thẻ từ vựng cần ôn tập hôm nay
         const dueCardsData = await vocabAPI.getDueCards();
         setDueCards(dueCardsData);
+        // Nếu không còn thẻ cần học, lấy thời gian đến thẻ tiếp theo
+        if (dueCardsData.length === 0) {
+          const nextDueData = await vocabAPI.getNextDue();
+          setNextDue(nextDueData);
+        } else {
+          setNextDue(null);
+        }
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
       } finally {
@@ -40,34 +48,55 @@ const Dashboard: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Tiêu đề tổng quan */}
-      <h1 className="text-3xl font-extrabold text-indigo-600 section-title text-center md:text-left mb-8 mt-4 hidden md:block">Tổng quan</h1>
+      <h1 className="text-2xl font-bold text-primary-500 text-center mb-2">Tổng quan</h1>
 
       {/* Card chính trên mobile */}
-      <div className="w-full max-w-md mx-auto md:max-w-none md:mx-0">
-        <div className="card relative flex flex-col items-center justify-center py-8 px-6 min-h-[160px] border border-gray-200 shadow-xl rounded-3xl bg-white mb-6 md:mb-0 md:py-4 md:px-2 md:rounded-xl md:shadow-sm">
-          <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-green-100 rounded-full p-3 shadow-md md:hidden">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3" /></svg>
+      <div className="w-full max-w-xs mx-auto md:max-w-none md:mx-0">
+        <div className="card relative flex flex-col items-center justify-center py-8 px-4 min-h-[120px] border border-gray-200 shadow-xl rounded-3xl bg-white mb-4 md:mb-0 md:py-4 md:px-2 md:rounded-xl md:shadow-sm">
+          <h3 className="text-base font-semibold text-gray-700 mb-2 text-center">Từ cần học hiện tại</h3>
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <span className="text-4xl font-extrabold text-primary-500">{dueCards.length}</span>
           </div>
-          <h3 className="text-lg font-bold text-black mb-2 text-center">Từ cần học hôm nay</h3>
-          <p className="text-5xl font-extrabold text-green-600 mb-4">{stats?.dueToday || 0}</p>
-          <Link to="/study" className="btn-primary w-full text-lg py-4 rounded-2xl shadow-lg active:scale-95 transition-transform flex items-center justify-center">
+          <Link
+            to={dueCards.length > 0 ? "/study" : "#"}
+            className={`btn-primary w-full text-lg py-3 rounded-full shadow-lg flex items-center justify-center transition-opacity ${dueCards.length === 0 ? 'opacity-50 pointer-events-none cursor-not-allowed' : ''}`}
+            tabIndex={dueCards.length === 0 ? -1 : 0}
+            aria-disabled={dueCards.length === 0}
+          >
             <span className="mr-2">Học ngay</span>
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
           </Link>
-          {/* Badge các chỉ số phụ trên mobile */}
-          <div className="flex justify-center gap-2 mt-6 md:hidden">
-            <div className="px-3 py-1 rounded-full bg-gray-100 text-gray-700 text-sm font-semibold shadow">Quá hạn: {stats?.overdue || 0}</div>
-            <div className="px-3 py-1 rounded-full bg-gray-100 text-gray-700 text-sm font-semibold shadow">Tổng: {stats?.total || 0}</div>
-            <div className="px-3 py-1 rounded-full bg-gray-100 text-gray-700 text-sm font-semibold shadow">Đã học: {stats?.studied || 0}</div>
-          </div>
+          {dueCards.length === 0 && (
+            <div className="mt-4 text-center text-sm text-gray-500">
+              {nextDue && nextDue.hours !== null && nextDue.minutes !== null && (nextDue.hours > 0 || nextDue.minutes > 0) ? (
+                <>
+                  Bạn sẽ có thẻ mới sau{' '}
+                  <span className="font-bold text-primary-500">
+                    {nextDue.hours > 0 ? `${nextDue.hours} giờ ` : ''}
+                    {nextDue.minutes > 0 ? `${nextDue.minutes} phút` : ''}
+                  </span>
+                  {' '}nữa.
+                </>
+              ) : (
+                <>Hiện tại không còn thẻ nào sắp đến hạn.</>
+              )}
+            </div>
+          )}
         </div>
+      </div>
+
+      {/* Badge các chỉ số phụ trên mobile */}
+      <div className="flex justify-center gap-2 md:hidden">
+        <div className="px-3 py-1 rounded-full bg-gray-100 text-gray-700 text-xs font-semibold shadow">Quá hạn: {stats?.overdue || 0}</div>
+        <div className="px-3 py-1 rounded-full bg-gray-100 text-gray-700 text-xs font-semibold shadow">Tổng: {stats?.total || 0}</div>
+        <div className="px-3 py-1 rounded-full bg-gray-100 text-gray-700 text-xs font-semibold shadow">Đã học: {stats?.studied || 0}</div>
       </div>
 
       {/* PC layout giữ nguyên */}
       <div className="hidden md:grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
         <div className="card flex flex-col items-center justify-center py-4 px-2 min-h-[120px] border border-gray-200 shadow-sm rounded-xl">
-          <h3 className="text-sm font-semibold text-black mb-1">Từ cần học hôm nay</h3>
-          <p className="text-2xl font-bold text-black mb-2">{stats?.dueToday || 0}</p>
+          <h3 className="text-sm font-semibold text-black mb-1">Từ cần học hiện tại</h3>
+          <p className="text-2xl font-bold text-black mb-2">{dueCards.length}</p>
           <Link to="/study" className="btn-primary w-full mt-2 text-base py-2 flex items-center justify-center">
             <span className="mr-2">Học ngay</span>
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
@@ -86,45 +115,6 @@ const Dashboard: React.FC = () => {
           <p className="text-2xl font-bold text-black mb-2">{stats?.studied || 0}</p>
         </div>
       </div>
-      
-      {/* Từ cần học hôm nay */}
-      <h2 className="text-xl font-semibold text-indigo-600 mb-4">
-        Từ cần học hôm nay ({dueCards.length})
-      </h2>
-      {dueCards.length > 0 ? (
-        <div className="space-y-2">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {dueCards.slice(0, 6).map((card) => (
-              <div key={card._id} className="card p-4">
-                <h3 className="font-bold text-lg text-gray-800 dark:text-white">{card.word}</h3>
-                <p className="text-neutral-600 dark:text-neutral-300">{card.meaning}</p>
-              </div>
-            ))}
-          </div>
-          {dueCards.length > 6 && (
-            <div className="text-center mt-4">
-              <span className="text-neutral-500 dark:text-neutral-300">
-                và {dueCards.length - 6} từ khác...
-              </span>
-            </div>
-          )}
-          <div className="flex justify-center mt-4">
-            <Link
-              to="/study"
-              className="btn-primary"
-            >
-              Bắt đầu học ngay
-            </Link>
-          </div>
-        </div>
-      ) : (
-        <div className="text-center py-4">
-          <p className="text-neutral-500 dark:text-neutral-300">Không có từ nào cần học hôm nay.</p>
-          <Link to="/vocab" className="btn-primary inline-block mt-4">
-            Thêm từ mới
-          </Link>
-        </div>
-      )}
     </div>
   );
 };

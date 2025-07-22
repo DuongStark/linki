@@ -60,8 +60,12 @@ export const vocabAPI = {
     return response.data;
   },
   getDueCards: async (): Promise<VocabCard[]> => {
-    const today = new Date().toISOString().split('T')[0];
-    const response = await api.get(`/vocab?dueDate=${today}`);
+    const now = new Date().toISOString();
+    const response = await api.get(`/vocab?dueDate=${now}`);
+    return response.data;
+  },
+  getNextDue: async (): Promise<{ hours: number|null, minutes: number|null }> => {
+    const response = await api.get('/vocab/next-due');
     return response.data;
   }
 };
