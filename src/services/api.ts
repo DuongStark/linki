@@ -67,6 +67,10 @@ export const vocabAPI = {
   getNextDue: async (): Promise<{ hours: number|null, minutes: number|null }> => {
     const response = await api.get('/vocab/next-due');
     return response.data;
+  },
+  getAllCards: async (): Promise<VocabCard[]> => {
+    const response = await api.get('/vocab/all');
+    return response.data;
   }
 };
 

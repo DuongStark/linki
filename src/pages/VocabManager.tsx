@@ -32,7 +32,7 @@ const VocabManager: React.FC = () => {
   const fetchVocabCards = async () => {
     try {
       setLoading(true);
-      const data = await vocabAPI.getAll();
+      const data = await vocabAPI.getAllCards();
       setVocabList(data);
     } catch (error) {
       console.error('Error fetching vocabulary cards:', error);
