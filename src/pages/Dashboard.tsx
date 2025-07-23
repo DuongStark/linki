@@ -1,41 +1,144 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { vocabAPI, statsAPI } from '../services/api.ts';
-import { VocabCard, StatsOverview } from '../types';
+import { Link, useNavigate } from 'react-router-dom';
+import { vocabAPI, statsAPI, deckAPI } from '../services/api.ts';
+import { VocabCard, StatsOverview, Deck, UserVocabProgress } from '../types';
+import { useSelectedDeck } from '../hooks/useSelectedDeck.ts';
 
 const Dashboard: React.FC = () => {
-  const [dueCards, setDueCards] = useState<VocabCard[]>([]);
-  const [stats, setStats] = useState<StatsOverview | null>(null);
+  const [decks, setDecks] = useState<Deck[]>([]);
+  const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null);
+  const [dueCards, setDueCards] = useState<UserVocabProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [nextDue, setNextDue] = useState<{ hours: number|null, minutes: number|null } | null>(null);
+  const navigate = useNavigate();
+  const [backlog, setBacklog] = useState(0);
+  const { selectedDeckId } = useSelectedDeck();
+  const [stats, setStats] = useState<StatsOverview | null>(null);
+  const [deckStats, setDeckStats] = useState<{ total: number, studied: number, mastered: number, dueToday: number } | null>(null);
+  const [learnedToday, setLearnedToday] = useState(0);
 
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        setLoading(true);
-        // Lấy thống kê tổng quan
-        const statsData = await statsAPI.getOverview();
-        setStats(statsData);
-        
-        // Lấy các thẻ từ vựng cần ôn tập hôm nay
-        const dueCardsData = await vocabAPI.getDueCards();
-        setDueCards(dueCardsData);
-        // Nếu không còn thẻ cần học, lấy thời gian đến thẻ tiếp theo
-        if (dueCardsData.length === 0) {
-          const nextDueData = await vocabAPI.getNextDue();
-          setNextDue(nextDueData);
-        } else {
-          setNextDue(null);
-        }
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-      } finally {
-        setLoading(false);
+    if (selectedDeckId) {
+      fetchDeck(selectedDeckId);
+      fetchDueCards(selectedDeckId);
+      fetchStats();
+    }
+  }, [selectedDeckId]);
+
+  // Gọi fetchNextDue khi selectedDeck đã sẵn sàng
+  useEffect(() => {
+    if (selectedDeck) {
+      fetchNextDue();
+    }
+  }, [selectedDeck]);
+
+  // Refetch khi window focus lại (quay lại tab)
+  useEffect(() => {
+    const onFocus = () => {
+      if (selectedDeckId) fetchDueCards(selectedDeckId);
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [selectedDeckId]);
+
+  useEffect(() => {
+    const onFocus = () => {
+      if (selectedDeckId) fetchNextDue();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [selectedDeckId, selectedDeck]);
+
+  useEffect(() => {
+    const fetchDeckStats = async () => {
+      if (!selectedDeck) return;
+      if (selectedDeck.type === 'shared') {
+        // Lấy tổng số từ của deck shared
+        const vocab = await deckAPI.getDeckVocab(selectedDeck._id);
+        setDeckStats({ total: vocab.length, studied: 0, mastered: 0, dueToday: 0 });
+      } else {
+        // Deck cá nhân, lấy stats như cũ
+        setDeckStats({
+          total: stats?.total || 0,
+          studied: stats?.studied || 0,
+          mastered: stats?.mastered || 0,
+          dueToday: stats?.dueToday || 0
+        });
       }
     };
+    fetchDeckStats();
+  }, [selectedDeck, stats]);
 
-    fetchDashboardData();
-  }, []);
+  useEffect(() => {
+    const fetchLearnedToday = async () => {
+      if (!selectedDeck) return setLearnedToday(0);
+      const todayStr = new Date().toISOString().split('T')[0];
+      if (selectedDeck.type === 'shared') {
+        // Lấy tiến trình học của user với deck shared này
+        const progress = await deckAPI.getDeckProgress(selectedDeck._id);
+        let count = 0;
+        for (const p of progress) {
+          if (p.reviewHistory && p.reviewHistory.some((r: any) => r.date && r.date.startsWith(todayStr))) {
+            count++;
+          }
+        }
+        setLearnedToday(count);
+      } else {
+        // Deck cá nhân, lấy số từ đã học hôm nay từ API stats.daily
+        const dailyStats = await statsAPI.getDailyStats();
+        const todayStats = dailyStats.find((d: any) => d.date === todayStr);
+        setLearnedToday(todayStats?.reviewCount || 0);
+      }
+    };
+    fetchLearnedToday();
+  }, [selectedDeck]);
+
+  const fetchDecks = async () => {
+    setLoading(true);
+    const deckList = await deckAPI.getDecks();
+    setDecks(deckList);
+    if (deckList.length > 0) {
+      setSelectedDeck(deckList[0]);
+      fetchDueCards(deckList[0]._id);
+    } else {
+      setDueCards([]);
+      setLoading(false);
+    }
+  };
+
+  const fetchDueCards = async (deckId: string) => {
+    setLoading(true);
+    const cards = await deckAPI.getDeckDue(deckId);
+    setDueCards(cards);
+    setLoading(false);
+  };
+
+  const handleSelectDeck = (deck: Deck) => {
+    setSelectedDeck(deck);
+    fetchDueCards(deck._id);
+  };
+
+  const fetchDeck = async (deckId: string) => {
+    setLoading(true);
+    const deck = await deckAPI.getDeck(deckId);
+    setSelectedDeck(deck);
+    fetchDueCards(deckId);
+  };
+
+  const fetchStats = async () => {
+    try {
+      const overview = await statsAPI.getOverview();
+      setStats(overview);
+    } catch {}
+  };
+
+  const fetchNextDue = async () => {
+    try {
+      if (!selectedDeck) return;
+      const res = await vocabAPI.getNextDue(selectedDeck._id, selectedDeck.type);
+      setNextDue(res);
+    } catch {}
+  };
 
   if (loading) {
     return (
@@ -45,76 +148,67 @@ const Dashboard: React.FC = () => {
     );
   }
 
+  if (!selectedDeckId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64">
+        <div className="bg-yellow-100 text-yellow-700 px-6 py-4 rounded-xl shadow mb-4 text-center max-w-xs">
+          Bạn cần chọn bộ từ ở trang <a href='/vocab' className='underline text-primary-600'>Quản lý từ vựng</a> trước khi học.
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      {/* Tiêu đề tổng quan */}
-      <h1 className="text-2xl font-bold text-primary-500 text-center mb-2">Tổng quan</h1>
-
-      {/* Card chính trên mobile */}
-      <div className="w-full max-w-xs mx-auto md:max-w-none md:mx-0">
-        <div className="card relative flex flex-col items-center justify-center py-8 px-4 min-h-[120px] border border-gray-200 shadow-xl rounded-3xl bg-white mb-4 md:mb-0 md:py-4 md:px-2 md:rounded-xl md:shadow-sm">
-          <h3 className="text-base font-semibold text-gray-700 mb-2 text-center">Từ cần học hiện tại</h3>
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <span className="text-4xl font-extrabold text-primary-500">{dueCards.length}</span>
+    <div className="flex flex-col items-center justify-center min-h-[80vh] px-2">
+      {/* Card lớn ở giữa */}
+      <div className="w-full max-w-sm bg-white dark:bg-neutral-800 rounded-3xl shadow-xl p-6 flex flex-col items-center mb-6">
+        <div className="text-gray-500 text-sm mb-2">Từ cần học hiện tại</div>
+        <div className="text-6xl font-extrabold text-primary-500 mb-4 min-h-[56px] flex items-center justify-center">
+          {loading
+            ? <span className="h-8 w-8 animate-spin border-4 border-primary-500 border-t-transparent rounded-full block"></span>
+            : dueCards.length}
+        </div>
+        <Link
+          to={dueCards.length > 0 ? `/study?deck=${selectedDeck?._id}` : "#"}
+          className={`w-full text-lg py-3 rounded-full font-bold flex items-center justify-center transition-all duration-200 ${dueCards.length === 0 ? 'bg-gray-300 text-gray-400 cursor-not-allowed' : 'bg-primary-500 text-white hover:bg-primary-600'}`}
+          tabIndex={dueCards.length === 0 ? -1 : 0}
+          aria-disabled={dueCards.length === 0}
+        >
+          Học ngay
+        </Link>
+        {/* Thông báo thời gian còn lại cho từ tiếp theo */}
+        {!loading && dueCards.length === 0 && (
+          <div className="mt-4 text-center text-sm text-gray-500">
+            {nextDue && (nextDue.hours !== null || nextDue.minutes !== null)
+              ? `Thẻ tiếp theo sẽ xuất hiện sau${nextDue.hours !== null && nextDue.hours > 0 ? ` ${nextDue.hours} giờ` : ''}${nextDue.minutes !== null && nextDue.minutes > 0 ? ` ${nextDue.minutes} phút` : ''} nữa.`
+              : 'Bạn đã hoàn thành hết các thẻ hôm nay!'}
           </div>
-          <Link
-            to={dueCards.length > 0 ? "/study" : "#"}
-            className={`btn-primary w-full text-lg py-3 rounded-full shadow-lg flex items-center justify-center transition-opacity ${dueCards.length === 0 ? 'opacity-50 pointer-events-none cursor-not-allowed' : ''}`}
-            tabIndex={dueCards.length === 0 ? -1 : 0}
-            aria-disabled={dueCards.length === 0}
-          >
-            <span className="mr-2">Học ngay</span>
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
-          </Link>
-          {dueCards.length === 0 && (
-            <div className="mt-4 text-center text-sm text-gray-500">
-              {nextDue && nextDue.hours !== null && nextDue.minutes !== null && (nextDue.hours > 0 || nextDue.minutes > 0) ? (
-                <>
-                  Bạn sẽ có thẻ mới sau{' '}
-                  <span className="font-bold text-primary-500">
-                    {nextDue.hours > 0 ? `${nextDue.hours} giờ ` : ''}
-                    {nextDue.minutes > 0 ? `${nextDue.minutes} phút` : ''}
-                  </span>
-                  {' '}nữa.
-                </>
-              ) : (
-                <>Hiện tại không còn thẻ nào sắp đến hạn.</>
-              )}
-            </div>
-          )}
-        </div>
+        )}
       </div>
-
-      {/* Badge các chỉ số phụ trên mobile */}
-      <div className="flex justify-center gap-2 md:hidden">
-        <div className="px-3 py-1 rounded-full bg-gray-100 text-gray-700 text-xs font-semibold shadow">Quá hạn: {stats?.overdue || 0}</div>
-        <div className="px-3 py-1 rounded-full bg-gray-100 text-gray-700 text-xs font-semibold shadow">Tổng: {stats?.total || 0}</div>
-        <div className="px-3 py-1 rounded-full bg-gray-100 text-gray-700 text-xs font-semibold shadow">Đã học: {stats?.studied || 0}</div>
-      </div>
-
-      {/* PC layout giữ nguyên */}
-      <div className="hidden md:grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-        <div className="card flex flex-col items-center justify-center py-4 px-2 min-h-[120px] border border-gray-200 shadow-sm rounded-xl">
-          <h3 className="text-sm font-semibold text-black mb-1">Từ cần học hiện tại</h3>
-          <p className="text-2xl font-bold text-black mb-2">{dueCards.length}</p>
-          <Link to="/study" className="btn-primary w-full mt-2 text-base py-2 flex items-center justify-center">
-            <span className="mr-2">Học ngay</span>
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
-          </Link>
+      {/* Các thông số nhỏ gọn bên dưới */}
+      {deckStats && (
+        <div className="grid grid-cols-2 gap-4 w-full max-w-md mb-6">
+          <div className="card flex flex-col items-center bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-100">
+            <span className="text-2xl font-bold text-primary-500">{deckStats?.total || 0}</span>
+            <span className="text-gray-500 dark:text-gray-300">Tổng số từ</span>
+          </div>
+          <div className="card flex flex-col items-center bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-100">
+            <span className="text-2xl font-bold text-blue-500">{deckStats?.studied || 0}</span>
+            <span className="text-gray-500 dark:text-gray-300">Đã học</span>
+          </div>
+          <div className="card flex flex-col items-center bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-100">
+            <span className="text-2xl font-bold text-green-600 flex items-center">
+              {deckStats?.mastered || 0}
+              <svg className="h-5 w-5 ml-1 text-green-400" fill="currentColor" viewBox="0 0 20 20"><path d="M10 15l-5.878 3.09 1.122-6.545L.488 6.91l6.561-.955L10 0l2.951 5.955 6.561.955-4.756 4.635 1.122 6.545z"/></svg>
+            </span>
+            <span className="text-gray-500 dark:text-gray-300">Đã thuộc</span>
+          </div>
+          <div className="card flex flex-col items-center bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-100">
+            <span className="text-2xl font-bold text-orange-500">{learnedToday}</span>
+            <span className="text-gray-500 dark:text-gray-300">Đã học hôm nay</span>
+          </div>
         </div>
-        <div className="card flex flex-col items-center justify-center py-4 px-2 min-h-[120px] border border-gray-200 shadow-sm rounded-xl">
-          <h3 className="text-sm font-semibold text-black mb-1">Từ quá hạn</h3>
-          <p className="text-2xl font-bold text-black mb-2">{stats?.overdue || 0}</p>
-        </div>
-        <div className="card flex flex-col items-center justify-center py-4 px-2 min-h-[120px] border border-gray-200 shadow-sm rounded-xl">
-          <h3 className="text-sm font-semibold text-black mb-1">Tổng từ vựng</h3>
-          <p className="text-2xl font-bold text-black mb-2">{stats?.total || 0}</p>
-        </div>
-        <div className="card flex flex-col items-center justify-center py-4 px-2 min-h-[120px] border border-gray-200 shadow-sm rounded-xl">
-          <h3 className="text-sm font-semibold text-black mb-1">Đã học</h3>
-          <p className="text-2xl font-bold text-black mb-2">{stats?.studied || 0}</p>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

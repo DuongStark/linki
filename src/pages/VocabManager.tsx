@@ -1,118 +1,155 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { vocabAPI } from '../services/api.ts';
 import api from '../services/api.ts';
-import { VocabCard } from '../types';
+import { Deck, UserVocabProgress } from '../types';
 import { useNavigate } from 'react-router-dom';
-import ReactDOM from 'react-dom';
-import { SpeakerWaveIcon } from '@heroicons/react/24/solid';
+import { SpeakerWaveIcon, ArrowDownTrayIcon, ChevronDownIcon } from '@heroicons/react/24/solid';
+import { deckAPI } from '../services/api.ts';
+import { useSelectedDeck } from '../hooks/useSelectedDeck.ts';
+import { FixedSizeList as List } from 'react-window';
+// XÓA: import InfiniteScroll from 'react-infinite-scroll-component';
 
-function OverlayPortal({ children }: { children: React.ReactNode }) {
-  return typeof window !== 'undefined' ? ReactDOM.createPortal(children, document.body) : null;
-}
+const PAGE_SIZE = 30;
 
 const VocabManager: React.FC = () => {
-  const [vocabList, setVocabList] = useState<VocabCard[]>([]);
+  const [decks, setDecks] = useState<Deck[]>([]);
+  const [importedDeckIds, setImportedDeckIds] = useState<string[]>([]);
+  const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null);
+  const [deckVocab, setDeckVocab] = useState<any[]>([]);
+  const [deckProgress, setDeckProgress] = useState<UserVocabProgress[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [editingCard, setEditingCard] = useState<VocabCard | null>(null);
-  const [formData, setFormData] = useState({
-    word: '',
-    meaning: '',
-    example: '',
-    phonetic: '',
-  });
-  const [searchTerm, setSearchTerm] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const { setSelectedDeckId, selectedDeckId } = useSelectedDeck();
+  const [displayedVocab, setDisplayedVocab] = useState<any[]>([]);
+  const [hasMore, setHasMore] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState<number | null>(null);
 
   useEffect(() => {
-    fetchVocabCards();
+    fetchDecks();
+    fetchImportedDecks();
+    // Đóng dropdown khi click ngoài
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const fetchVocabCards = async () => {
+  const fetchDecks = async () => {
     try {
       setLoading(true);
-      const data = await vocabAPI.getAllCards();
-      setVocabList(data);
+      const data = await deckAPI.getDecks();
+      setDecks(data);
     } catch (error) {
-      console.error('Error fetching vocabulary cards:', error);
+      setMessage({ type: 'error', text: 'Không thể tải danh sách bộ từ.' });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData({
-      ...formData,
-      [name]: value,
-    });
-  };
-
-  const handleAddCard = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
+  // Lấy danh sách deck đã import (dựa vào tiến trình học)
+  const fetchImportedDecks = async () => {
     try {
-      if (editingCard) {
-        await vocabAPI.update(editingCard._id, formData);
-        setMessage({ type: 'success', text: 'Cập nhật từ thành công!' });
-      } else {
-        await vocabAPI.create(formData);
-        setMessage({ type: 'success', text: 'Thêm từ mới thành công!' });
-      }
-      
-      resetForm();
-      fetchVocabCards();
-    } catch (error: any) {
-      if (error?.response?.status === 401) {
-        setMessage({ type: 'error', text: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.' });
-        setTimeout(() => navigate('/login'), 1500);
-        return;
-      }
-      setMessage({ type: 'error', text: error?.response?.data?.message || 'Có lỗi xảy ra khi lưu từ vựng.' });
-      console.error('Error saving vocabulary card:', error);
-    }
+      // Giả định: deck cá nhân là đã import, deck shared thì phải kiểm tra có tiến trình học chưa
+      const data = await deckAPI.getDecks();
+      const imported = data.filter(d => d.type === 'personal').map(d => d._id);
+      setImportedDeckIds(imported);
+    } catch {}
   };
 
-  const handleEditCard = (card: VocabCard) => {
-    setEditingCard(card);
-    setFormData({
-      word: card.word,
-      meaning: card.meaning,
-      example: card.example || '',
-      phonetic: card.phonetic || '',
-    });
-    setShowAddForm(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  // Kiểm tra deck đã import chưa (deck cá nhân là đã import, deck shared thì phải có tiến trình học của user với deck đó)
+  const isDeckImported = async (deck: Deck) => {
+    if (deck.type === 'personal') return true;
+    // Kiểm tra tiến trình học của user với deck shared này
+    const progress = await deckAPI.getDeckProgress(deck._id);
+    return progress && progress.length > 0;
   };
 
-  const handleDeleteCard = async (id: string) => {
-    if (window.confirm('Bạn có chắc chắn muốn xóa từ này không?')) {
-      try {
-        await vocabAPI.delete(id);
-        setVocabList(prevList => prevList.filter(card => card._id !== id));
-        setMessage({ type: 'success', text: 'Xóa từ thành công!' });
-      } catch (error: any) {
-        if (error?.response?.status === 401) {
-          setMessage({ type: 'error', text: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.' });
-          setTimeout(() => navigate('/login'), 1500);
-          return;
+  // Sửa lại dropdown render: dùng state để lưu deck nào đã import (dùng Promise.all để preload)
+  useEffect(() => {
+    const preloadImported = async () => {
+      const imported: string[] = [];
+      for (const deck of decks) {
+        if (deck.type === 'personal') imported.push(deck._id);
+        else {
+          const progress = await deckAPI.getDeckProgress(deck._id);
+          if (progress && progress.length > 0) imported.push(deck._id);
         }
-        setMessage({ type: 'error', text: error?.response?.data?.message || 'Có lỗi xảy ra khi xóa từ vựng.' });
-        console.error('Error deleting vocabulary card:', error);
       }
+      setImportedDeckIds(imported);
+    };
+    if (decks.length > 0) preloadImported();
+  }, [decks]);
+
+  // Khi vào lại, nếu đã có selectedDeckId thì tự động chọn lại deck đó
+  useEffect(() => {
+    if (decks.length > 0 && selectedDeckId) {
+      const deck = decks.find(d => d._id === selectedDeckId);
+      if (deck) handleSelectDeck(deck);
     }
+    // eslint-disable-next-line
+  }, [decks, selectedDeckId]);
+
+  const handleSelectDeck = async (deck: Deck) => {
+    setSelectedDeck(deck);
+    setSelectedDeckId(deck._id);
+    setMessage(null);
+    setLoading(true);
+    if (deck.type === 'shared') {
+      const vocab = await deckAPI.getDeckVocab(deck._id);
+      setDeckVocab(vocab);
+      setDeckProgress([]);
+    } else {
+      const progress = await deckAPI.getDeckProgress(deck._id);
+      setDeckProgress(progress);
+      setDeckVocab([]);
+    }
+    setLoading(false);
+    setDropdownOpen(false);
   };
 
-  const resetForm = () => {
-    setFormData({ word: '', meaning: '', example: '', phonetic: '' });
-    setEditingCard(null);
-    setShowAddForm(false);
+  const handleImportDeck = async (deck: Deck) => {
+    if (!window.confirm(`Import toàn bộ từ của bộ "${deck.name}" vào tiến trình học?`)) return;
+    setImporting(true);
+    setImportProgress(null);
+    setLoading(true);
+    try {
+      // Nếu muốn progress thật, cần backend hỗ trợ, tạm thời fake progress
+      let fakeProgress = 0;
+      const progressInterval = setInterval(() => {
+        fakeProgress += Math.random() * 20 + 10;
+        setImportProgress(Math.min(100, fakeProgress));
+      }, 300);
+      const res = await deckAPI.importDeck(deck._id);
+      clearInterval(progressInterval);
+      setImportProgress(100);
+      setMessage({ type: 'success', text: res.message });
+      await fetchDecks();
+      await fetchImportedDecks();
+      // Sau khi import xong, tự động chọn deck cá nhân tương ứng (nếu có)
+      const personalDecks = decks.filter(d => d.type === 'personal');
+      if (personalDecks.length > 0) {
+        handleSelectDeck(personalDecks[0]);
+      }
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err?.response?.data?.message || 'Có lỗi khi import bộ từ.' });
+    } finally {
+      setImporting(false);
+      setImportProgress(null);
+      setLoading(false);
+    }
   };
 
   const playAudio = async (word: string) => {
     try {
-      const token = localStorage.getItem('token'); // hoặc nơi bạn lưu token
+      const token = localStorage.getItem('token');
       const response = await fetch(`${api.defaults.baseURL}/tts/${encodeURIComponent(word)}`, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -128,150 +165,202 @@ const VocabManager: React.FC = () => {
     }
   };
 
-  const filteredVocabList = vocabList.filter(
-    card => card.word.toLowerCase().includes(searchTerm.toLowerCase()) || 
-            card.meaning.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Khi fetch xong vocab/progress, reset infinite scroll
+  useEffect(() => {
+    if (selectedDeck) {
+      const data = selectedDeck.type === 'shared' ? deckVocab : deckProgress;
+      setDisplayedVocab(data); // Sửa: không slice theo PAGE_SIZE
+      setHasMore(data.length > PAGE_SIZE);
+    }
+  }, [deckVocab, deckProgress, selectedDeck]);
+
+  const fetchMoreVocab = () => {
+    const data = selectedDeck?.type === 'shared' ? deckVocab : deckProgress;
+    if (!data) return;
+    const next = data.slice(displayedVocab.length, displayedVocab.length + PAGE_SIZE);
+    setDisplayedVocab(prev => [...prev, ...next]);
+    setHasMore(displayedVocab.length + next.length < data.length);
+  };
+
+  // Tính tổng số trang
+  const totalPages = Math.ceil(displayedVocab.length / PAGE_SIZE);
+  // Lấy dữ liệu trang hiện tại
+  const pagedVocab = displayedVocab.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
-    <div className="space-y-6">
-      {message && (
-        <div className={`p-3 rounded mb-2 ${message.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-          {message.text}
+    <div className="space-y-6 max-w-xl mx-auto pb-24 relative"> {/* Thêm pb-24 để tránh bị navbar che */}
+      {/* Overlay khi import */}
+      {importing && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black bg-opacity-40">
+          <div className="bg-white dark:bg-neutral-800 rounded-xl shadow-lg p-8 flex flex-col items-center">
+            <div className="mb-4 text-lg font-semibold text-primary-600">Đang import bộ từ...</div>
+            <div className="w-64 h-4 bg-gray-200 rounded-full overflow-hidden mb-2">
+              <div className="h-4 bg-primary-500 transition-all" style={{ width: `${importProgress ?? 50}%` }}></div>
+            </div>
+            <div className="text-sm text-gray-500">Vui lòng chờ trong giây lát...</div>
+          </div>
         </div>
       )}
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl sm:text-3xl font-bold text-primary-500">Quản lý từ vựng</h1>
-        {!showAddForm && (
-          <button 
-            className="bg-primary-500 hover:bg-primary-600 text-white font-bold py-2 px-4 rounded-full shadow transition-all"
-            onClick={() => setShowAddForm(true)}
-          >
-            + Thêm từ mới
-          </button>
+      {message && (
+        <div className={`p-3 rounded mb-2 ${message.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{message.text}</div>
+      )}
+      <h1 className="text-2xl sm:text-3xl font-bold text-primary-500 mb-2">Quản lý bộ từ</h1>
+      {/* Dropdown chọn deck */}
+      <div className="relative mb-4" ref={dropdownRef}>
+        <button
+          className="w-full px-4 py-2 rounded-xl border shadow flex items-center justify-between bg-white text-gray-800 font-semibold focus:outline-none focus:ring-2 focus:ring-primary-400"
+          onClick={() => setDropdownOpen(v => !v)}
+        >
+          {selectedDeck ? (
+            <span>{selectedDeck.name}</span>
+          ) : (
+            <span className="text-gray-400">Chọn bộ từ...</span>
+          )}
+          <ChevronDownIcon className={`h-5 w-5 ml-2 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+        </button>
+        {dropdownOpen && (
+          <div className="absolute z-20 mt-2 w-full bg-white border rounded-xl shadow-lg max-h-60 overflow-y-auto">
+            {decks.map(deck => (
+              <div key={deck._id} className="flex items-center justify-between px-4 py-2 hover:bg-primary-50 cursor-pointer">
+                <span onClick={() => importedDeckIds.includes(deck._id) && handleSelectDeck(deck)} className={importedDeckIds.includes(deck._id) ? '' : 'text-gray-400 cursor-not-allowed'}>
+                  {deck.name} {deck.type === 'shared' && <span className="text-xs">(mẫu)</span>}
+                </span>
+                {!importedDeckIds.includes(deck._id) && (
+                  <button
+                    className="ml-2 px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded flex items-center text-xs"
+                    onClick={() => handleImportDeck(deck)}
+                  >
+                    <ArrowDownTrayIcon className="h-4 w-4 mr-1" /> Download
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
         )}
       </div>
-      {showAddForm && (
-        <OverlayPortal>
-          {/* Backdrop */}
-          <div className="fixed inset-0 z-[9999] bg-black/40 backdrop-blur-sm transition-opacity duration-300" onClick={resetForm}></div>
-          {/* Form overlay mobile */}
-          <div className={`fixed inset-0 z-[99999] flex items-end md:hidden transition-transform duration-300 ${showAddForm ? 'translate-y-0' : 'translate-y-full'}`} style={{pointerEvents: 'auto'}}>
-            <div className="w-full bg-white dark:bg-neutral-800 rounded-t-3xl p-6 pt-4 shadow-2xl min-h-[60vh] flex flex-col animate-slideup pb-[80px]">
-              <div className="flex justify-between items-center mb-2">
-                <h2 className="text-lg font-bold text-primary-500">{editingCard ? 'Cập nhật từ' : 'Thêm từ mới'}</h2>
-                <button onClick={resetForm} className="text-3xl text-gray-400 hover:text-red-500 font-bold px-2">&times;</button>
-              </div>
-              <form onSubmit={handleAddCard} className="space-y-4 flex-1 flex flex-col justify-between">
-                <div className="space-y-4">
-                  <input type="text" name="word" value={formData.word} onChange={handleInputChange} className="w-full px-5 py-3 border-none rounded-2xl shadow focus:shadow-lg focus:ring-2 focus:ring-primary-300 bg-gray-50 dark:bg-neutral-900 text-neutral-800 dark:text-neutral-100 text-base placeholder-gray-400" placeholder="Từ *" required />
-                  <input type="text" name="phonetic" value={formData.phonetic} onChange={handleInputChange} className="w-full px-5 py-3 border-none rounded-2xl shadow focus:shadow-lg focus:ring-2 focus:ring-primary-300 bg-gray-50 dark:bg-neutral-900 text-neutral-800 dark:text-neutral-100 text-base placeholder-gray-400" placeholder="Phiên âm (không bắt buộc)" />
-                  <input type="text" name="meaning" value={formData.meaning} onChange={handleInputChange} className="w-full px-5 py-3 border-none rounded-2xl shadow focus:shadow-lg focus:ring-2 focus:ring-primary-300 bg-gray-50 dark:bg-neutral-900 text-neutral-800 dark:text-neutral-100 text-base placeholder-gray-400" placeholder="Nghĩa *" required />
-                  <textarea name="example" value={formData.example} onChange={handleInputChange} className="w-full px-5 py-3 border-none rounded-2xl shadow focus:shadow-lg focus:ring-2 focus:ring-primary-300 bg-gray-50 dark:bg-neutral-900 text-neutral-800 dark:text-neutral-100 text-base placeholder-gray-400 min-h-[60px]" placeholder="Ví dụ (không bắt buộc)" />
-                </div>
-                <div className="flex gap-2 pt-2">
-                  <button type="submit" className="flex-1 bg-primary-500 hover:bg-primary-600 text-white font-bold py-3 rounded-full shadow transition-all">{editingCard ? 'Cập nhật' : 'Thêm từ'}</button>
-                  <button type="button" onClick={resetForm} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-3 rounded-full shadow transition-all">Hủy</button>
-                </div>
-              </form>
-            </div>
-          </div>
-          {/* Form card PC */}
-          <div className="hidden md:block fixed inset-0 z-[99999] flex items-center justify-center">
-            <div className="bg-white dark:bg-neutral-800 shadow-2xl rounded-3xl p-6 min-w-[400px] max-w-lg mx-auto relative animate-fadein">
-              <button onClick={resetForm} className="absolute top-3 right-3 text-gray-400 hover:text-red-500 text-2xl font-bold">&times;</button>
-              <h2 className="text-lg sm:text-xl font-semibold text-primary-500 mb-4">{editingCard ? 'Cập nhật từ' : 'Thêm từ mới'}</h2>
-              <form onSubmit={handleAddCard} className="space-y-4">
-                <input type="text" name="word" value={formData.word} onChange={handleInputChange} className="w-full px-5 py-3 border-none rounded-2xl shadow focus:shadow-lg focus:ring-2 focus:ring-primary-300 bg-gray-50 dark:bg-neutral-900 text-neutral-800 dark:text-neutral-100 text-base placeholder-gray-400" placeholder="Từ *" required />
-                <input type="text" name="phonetic" value={formData.phonetic} onChange={handleInputChange} className="w-full px-5 py-3 border-none rounded-2xl shadow focus:shadow-lg focus:ring-2 focus:ring-primary-300 bg-gray-50 dark:bg-neutral-900 text-neutral-800 dark:text-neutral-100 text-base placeholder-gray-400" placeholder="Phiên âm (không bắt buộc)" />
-                <input type="text" name="meaning" value={formData.meaning} onChange={handleInputChange} className="w-full px-5 py-3 border-none rounded-2xl shadow focus:shadow-lg focus:ring-2 focus:ring-primary-300 bg-gray-50 dark:bg-neutral-900 text-neutral-800 dark:text-neutral-100 text-base placeholder-gray-400" placeholder="Nghĩa *" required />
-                <textarea name="example" value={formData.example} onChange={handleInputChange} className="w-full px-5 py-3 border-none rounded-2xl shadow focus:shadow-lg focus:ring-2 focus:ring-primary-300 bg-gray-50 dark:bg-neutral-900 text-neutral-800 dark:text-neutral-100 text-base placeholder-gray-400 min-h-[60px]" placeholder="Ví dụ (không bắt buộc)" />
-                <div className="flex gap-2 pt-2">
-                  <button type="submit" className="flex-1 bg-primary-500 hover:bg-primary-600 text-white font-bold py-3 rounded-full shadow transition-all">{editingCard ? 'Cập nhật' : 'Thêm từ'}</button>
-                  <button type="button" onClick={resetForm} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-3 rounded-full shadow transition-all">Hủy</button>
-                </div>
-              </form>
-            </div>
-          </div>
-          {/* Animation keyframes */}
-          <style>{`
-            @keyframes slideup { from { transform: translateY(100%); } to { transform: translateY(0); } }
-            .animate-slideup { animation: slideup 0.3s cubic-bezier(.4,2,.6,1) both; }
-            @keyframes fadein { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-            .animate-fadein { animation: fadein 0.25s cubic-bezier(.4,2,.6,1) both; }
-          `}</style>
-        </OverlayPortal>
+      {/* Nút học bộ từ này */}
+      {selectedDeck && importedDeckIds.includes(selectedDeck._id) && (
+        <button
+          className="bg-primary-500 hover:bg-primary-600 text-white font-bold py-2 px-4 rounded-full shadow mb-4 w-full"
+          onClick={() => navigate('/study')}
+        >
+          Học bộ từ này
+        </button>
       )}
-      <div className="mb-4">
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          className="w-full px-5 py-3 border-none rounded-2xl shadow focus:shadow-lg focus:ring-2 focus:ring-primary-300 bg-gray-50 dark:bg-neutral-900 text-neutral-800 dark:text-neutral-100 text-base placeholder-gray-400"
-          placeholder="🔍 Tìm kiếm từ vựng..."
-        />
-      </div>
+      {/* Hiển thị từ vựng hoặc tiến trình học */}
       {loading ? (
         <div className="flex justify-center my-8">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
         </div>
-      ) : filteredVocabList.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {filteredVocabList.map(card => (
-            <div key={card._id} className="bg-white dark:bg-neutral-800 rounded-2xl shadow-lg p-4 flex flex-col gap-2 relative">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => playAudio(card.word)}
-                    className="text-primary-500 hover:text-primary-600 text-xl p-1"
-                    title="Phát âm"
-                  >
-                    <SpeakerWaveIcon className="h-6 w-6" />
-                  </button>
-                  <div>
-                    <div className="text-lg font-bold text-gray-800 dark:text-white">{card.word}</div>
-                    {card.phonetic && (
-                      <div className="text-sm text-neutral-500 dark:text-neutral-300">{card.phonetic}</div>
-                    )}
-                  </div>
-                </div>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => handleEditCard(card)}
-                    className="p-2 rounded-full bg-blue-100 hover:bg-blue-200 text-blue-600 text-sm font-bold shadow"
-                    title="Sửa"
-                  >
-                    ✏️
-                  </button>
-                  <button
-                    onClick={() => handleDeleteCard(card._id)}
-                    className="p-2 rounded-full bg-red-100 hover:bg-red-200 text-red-600 text-sm font-bold shadow"
-                    title="Xóa"
-                  >
-                    🗑️
-                  </button>
-                </div>
-              </div>
-              <div className="text-base text-neutral-800 dark:text-neutral-100 mt-1">{card.meaning}</div>
-              {card.example && (
-                <div className="text-sm text-neutral-500 dark:text-neutral-300 italic mt-1">{card.example}</div>
+      ) : selectedDeck && importedDeckIds.includes(selectedDeck._id) ? (
+        <div>
+          <h2 className="text-lg font-semibold mb-2">Danh sách từ trong bộ "{selectedDeck.name}"</h2>
+          {/* Pagination controls đặt lên trên */}
+          {totalPages > 1 && (
+            <div className="flex justify-center items-center gap-1 mb-4 shadow-lg bg-white/80 dark:bg-neutral-900/80 rounded-lg p-2 overflow-x-auto whitespace-nowrap">
+              <button
+                className="px-2 py-1 rounded border bg-gray-100 hover:bg-gray-200 text-sm"
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                &lt;
+              </button>
+              {/* Trang đầu */}
+              <button
+                key={1}
+                className={`px-2 py-1 rounded border text-sm ${currentPage === 1 ? 'bg-primary-500 text-white border-primary-500' : 'bg-gray-100 hover:bg-gray-200'}`}
+                onClick={() => setCurrentPage(1)}
+              >
+                1
+              </button>
+              {/* Dấu ... nếu cần */}
+              {currentPage > 3 && <span className="px-1">...</span>}
+              {/* Trang trước */}
+              {currentPage > 2 && currentPage !== totalPages && (
+                <button
+                  key={currentPage - 1}
+                  className="px-2 py-1 rounded border text-sm bg-gray-100 hover:bg-gray-200"
+                  onClick={() => setCurrentPage(currentPage - 1)}
+                >
+                  {currentPage - 1}
+                </button>
               )}
+              {/* Trang hiện tại */}
+              {currentPage !== 1 && currentPage !== totalPages && (
+                <button
+                  key={currentPage}
+                  className="px-2 py-1 rounded border text-sm bg-primary-500 text-white border-primary-500"
+                  onClick={() => setCurrentPage(currentPage)}
+                  disabled
+                >
+                  {currentPage}
+                </button>
+              )}
+              {/* Trang sau */}
+              {currentPage < totalPages - 1 && currentPage !== 1 && (
+                <button
+                  key={currentPage + 1}
+                  className="px-2 py-1 rounded border text-sm bg-gray-100 hover:bg-gray-200"
+                  onClick={() => setCurrentPage(currentPage + 1)}
+                >
+                  {currentPage + 1}
+                </button>
+              )}
+              {/* Dấu ... nếu cần */}
+              {currentPage < totalPages - 2 && <span className="px-1">...</span>}
+              {/* Trang cuối nếu > 1 */}
+              {totalPages > 1 && (
+                <button
+                  key={totalPages}
+                  className={`px-2 py-1 rounded border text-sm ${currentPage === totalPages ? 'bg-primary-500 text-white border-primary-500' : 'bg-gray-100 hover:bg-gray-200'}`}
+                  onClick={() => setCurrentPage(totalPages)}
+                >
+                  {totalPages}
+                </button>
+              )}
+              <button
+                className="px-2 py-1 rounded border bg-gray-100 hover:bg-gray-200 text-sm"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                &gt;
+              </button>
             </div>
-          ))}
+          )}
+          {pagedVocab.length === 0 ? (
+            <div className="text-gray-400 text-center py-4">Không có từ nào để hiển thị.</div>
+          ) : (
+            <div>
+              {pagedVocab.map((card, idx) => {
+                const word = card.word;
+                const meaning = card.meaning;
+                const phonetic = card.phonetic;
+                const _id = card._id || card.vocabId;
+                return (
+                  <div key={_id} className="bg-white dark:bg-neutral-800 rounded-xl shadow p-3 flex items-center justify-between mb-2">
+                    <div>
+                      <span className="font-bold text-primary-600">{word}</span>
+                      {' - '}
+                      {meaning}
+                      {phonetic && <span className="ml-2 text-sm text-gray-500">[{phonetic}]</span>}
+                    </div>
+                    <button
+                      className="rounded-full bg-primary-100 dark:bg-primary-900 p-2 ml-2 shadow-md active:scale-95 transition focus:outline-none focus:ring-2 focus:ring-primary-400"
+                      onClick={() => playAudio(word)}
+                      aria-label="Nghe phát âm"
+                      tabIndex={0}
+                    >
+                      <SpeakerWaveIcon className="h-6 w-6 text-primary-500" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       ) : (
-        <div className="text-center py-10">
-          <p className="text-neutral-500 dark:text-neutral-300">
-            {searchTerm ? 'Không tìm thấy từ vựng phù hợp' : 'Chưa có từ vựng nào'}
-          </p>
-          {!searchTerm && (
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="mt-4 bg-primary-500 hover:bg-primary-600 text-white font-bold py-3 px-6 rounded-full shadow transition-all"
-            >
-              Thêm từ đầu tiên
-            </button>
-          )}
+        <div className="text-center text-gray-400 italic py-8">
+          Hãy import bộ từ để xem danh sách từ vựng!
         </div>
       )}
     </div>

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { VocabCard, StatsOverview, DailyStats } from '../types';
+import { VocabCard, StatsOverview, DailyStats, Deck, UserVocabProgress } from '../types';
 declare var process: { env: { [key: string]: string } };
 // Tạo instance axios với cấu hình mặc định
 const api = axios.create({
@@ -64,12 +64,24 @@ export const vocabAPI = {
     const response = await api.get(`/vocab?dueDate=${now}`);
     return response.data;
   },
-  getNextDue: async (): Promise<{ hours: number|null, minutes: number|null }> => {
-    const response = await api.get('/vocab/next-due');
+  getAllDueCards: async (): Promise<VocabCard[]> => {
+    const response = await api.get('/vocab?allDue=true');
+    return response.data;
+  },
+  getNextDue: async (deckId?: string, deckType?: string): Promise<{ hours: number|null, minutes: number|null }> => {
+    let url = '/vocab/next-due';
+    if (deckId && deckType) {
+      url += `?deckId=${deckId}&deckType=${deckType}`;
+    }
+    const response = await api.get(url);
     return response.data;
   },
   getAllCards: async (): Promise<VocabCard[]> => {
     const response = await api.get('/vocab/all');
+    return response.data;
+  },
+  importShared: async (): Promise<{ message: string }> => {
+    const response = await api.post('/vocab/import-shared');
     return response.data;
   }
 };
@@ -111,6 +123,37 @@ export const notificationsAPI = {
     const response = await api.post('/notifications/send-reminder');
     return response.data;
   }
+};
+
+export const deckAPI = {
+  getDecks: async (): Promise<Deck[]> => {
+    const response = await api.get('/vocab/decks');
+    return response.data;
+  },
+  importDeck: async (deckId: string): Promise<{ message: string }> => {
+    const response = await api.post(`/vocab/decks/import/${deckId}`);
+    return response.data;
+  },
+  getDeckProgress: async (deckId: string): Promise<UserVocabProgress[]> => {
+    const response = await api.get(`/vocab/decks/${deckId}/progress`);
+    return response.data;
+  },
+  getDeckVocab: async (deckId: string): Promise<any[]> => {
+    const response = await api.get(`/vocab/decks/${deckId}/vocab`);
+    return response.data;
+  },
+  getDeckDue: async (deckId: string): Promise<UserVocabProgress[]> => {
+    const response = await api.get(`/vocab/decks/${deckId}/due`);
+    return response.data;
+  },
+  getDeckDueCount: async (deckId: string): Promise<{ count: number }> => {
+    const response = await api.get(`/vocab/decks/${deckId}/due?count=true`);
+    return response.data;
+  },
+  getDeck: async (deckId: string): Promise<Deck> => {
+    const response = await api.get(`/vocab/decks/${deckId}`);
+    return response.data;
+  },
 };
 
 export default api; 

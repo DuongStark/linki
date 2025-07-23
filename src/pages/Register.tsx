@@ -7,13 +7,16 @@ const Register: React.FC = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [success, setSuccess] = useState(false);
   const { state, register, clearError } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     if (!state.loading && !state.error && state.error !== null) {
-      // Đăng ký thành công
-      navigate('/login');
+      setSuccess(true);
+      setTimeout(() => {
+        navigate('/login');
+      }, 2000);
     }
   }, [state.loading, state.error, navigate]);
 
@@ -38,6 +41,11 @@ const Register: React.FC = () => {
           <h2 className="text-xl sm:text-2xl font-bold text-center text-gray-800 dark:text-white mb-2 tracking-tight">Đăng ký</h2>
         </div>
         <div className="bg-white dark:bg-gray-800 shadow-2xl rounded-3xl px-4 py-8 sm:px-8 sm:py-10 transition-all">
+          {success && (
+            <div className="bg-green-100 border border-green-400 text-green-700 px-3 py-2 rounded-xl mb-4 text-center text-sm font-semibold">
+              Đăng ký thành công! Đang chuyển hướng sang trang đăng nhập...
+            </div>
+          )}
           {state.error && (
             <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded-xl mb-4 relative text-sm">
               <span className="block sm:inline">{state.error}</span>

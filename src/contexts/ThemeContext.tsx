@@ -34,7 +34,14 @@ const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   // Toggle theme
   const toggleTheme = () => {
-    setTheme((prevTheme) => (prevTheme === 'light' ? 'dark' : 'light'));
+    const newTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme);
+    const root = window.document.documentElement;
+    root.classList.remove('light', 'dark');
+    root.classList.add(newTheme);
+    localStorage.setItem('theme', newTheme);
+    // Force re-render toàn bộ app
+    window.dispatchEvent(new Event('themechange'));
   };
 
   return (

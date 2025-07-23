@@ -154,7 +154,14 @@ const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   const logout = async () => {
     // Nếu backend có endpoint logout, gọi ở đây, ví dụ:
     // await authAPI.logout();
-    localStorage.removeItem('token');
+    localStorage.clear();
+    sessionStorage.clear();
+    if ('caches' in window) {
+      // Xóa toàn bộ cache (service worker)
+      caches.keys().then(function(names) {
+        for (let name of names) caches.delete(name);
+      });
+    }
     dispatch({ type: 'LOGOUT' });
   };
 

@@ -58,4 +58,28 @@ export interface NotificationSettings {
   enabled: boolean;
   dailyReminder: boolean;
   reminderTime: string;
+}
+
+export interface Deck {
+  _id: string;
+  name: string;
+  type: 'shared' | 'personal';
+  owner?: string;
+  description?: string;
+  tags?: string[];
+}
+
+export interface UserVocabProgress {
+  _id: string;
+  word: string;
+  meaning: string;
+  example?: string;
+  audio?: string;
+  phonetic?: string;
+  image?: string;
+  tags?: string[];
+  srs: SRSData;
+  reviewHistory: ReviewHistory[];
+  vocabId: string;
+  deck: string;
 } 
