@@ -1,36 +1,67 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { vocabAPI, statsAPI, deckAPI } from '../services/api.ts';
-import { VocabCard, StatsOverview, Deck, UserVocabProgress } from '../types';
+import { StatsOverview, Deck, UserVocabProgress } from '../types';
 import { useSelectedDeck } from '../hooks/useSelectedDeck.ts';
 
 const Dashboard: React.FC = () => {
-  const [decks, setDecks] = useState<Deck[]>([]);
   const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null);
   const [dueCards, setDueCards] = useState<UserVocabProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [nextDue, setNextDue] = useState<{ hours: number|null, minutes: number|null } | null>(null);
-  const navigate = useNavigate();
-  const [backlog, setBacklog] = useState(0);
   const { selectedDeckId } = useSelectedDeck();
   const [stats, setStats] = useState<StatsOverview | null>(null);
   const [deckStats, setDeckStats] = useState<{ total: number, studied: number, mastered: number, dueToday: number } | null>(null);
   const [learnedToday, setLearnedToday] = useState(0);
+  const [showSubCards, setShowSubCards] = useState(false);
 
+  // Gom các API call chính thành một Promise.all
   useEffect(() => {
-    if (selectedDeckId) {
-      fetchDeck(selectedDeckId);
-      fetchDueCards(selectedDeckId);
-      fetchStats();
-    }
+    if (!selectedDeckId) return;
+    setLoading(true);
+    Promise.all([
+      deckAPI.getDeck(selectedDeckId),
+      deckAPI.getDeckDue(selectedDeckId),
+      statsAPI.getOverview()
+    ]).then(([deck, dueCards, overview]) => {
+      setSelectedDeck(deck);
+      setDueCards(dueCards);
+      setStats(overview);
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, [selectedDeckId]);
 
-  // Gọi fetchNextDue khi selectedDeck đã sẵn sàng
+  // Chỉ gọi fetchNextDue khi selectedDeck thay đổi
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (selectedDeck) {
       fetchNextDue();
     }
   }, [selectedDeck]);
+
+  // Chỉ gọi fetchLearnedToday khi selectedDeck hoặc stats thay đổi
+  useEffect(() => {
+    const fetchLearnedToday = async () => {
+      if (!selectedDeck) return setLearnedToday(0);
+      const todayStr = new Date().toISOString().split('T')[0];
+      if (selectedDeck.type === 'shared') {
+        const progress = await deckAPI.getDeckProgress(selectedDeck._id);
+        let count = 0;
+        for (const p of progress) {
+          if (p.reviewHistory && p.reviewHistory.some((r: any) => r.date && r.date.startsWith(todayStr))) {
+            count++;
+          }
+        }
+        setLearnedToday(count);
+      } else {
+        const dailyStats = await statsAPI.getDailyStats();
+        const todayStats = dailyStats.find((d: any) => d.date === todayStr);
+        setLearnedToday(todayStats?.reviewCount || 0);
+      }
+    };
+    fetchLearnedToday();
+    // eslint-disable-next-line
+  }, [selectedDeck, stats]);
 
   // Refetch khi window focus lại (quay lại tab)
   useEffect(() => {
@@ -70,66 +101,20 @@ const Dashboard: React.FC = () => {
   }, [selectedDeck, stats]);
 
   useEffect(() => {
-    const fetchLearnedToday = async () => {
-      if (!selectedDeck) return setLearnedToday(0);
-      const todayStr = new Date().toISOString().split('T')[0];
-      if (selectedDeck.type === 'shared') {
-        // Lấy tiến trình học của user với deck shared này
-        const progress = await deckAPI.getDeckProgress(selectedDeck._id);
-        let count = 0;
-        for (const p of progress) {
-          if (p.reviewHistory && p.reviewHistory.some((r: any) => r.date && r.date.startsWith(todayStr))) {
-            count++;
-          }
-        }
-        setLearnedToday(count);
-      } else {
-        // Deck cá nhân, lấy số từ đã học hôm nay từ API stats.daily
-        const dailyStats = await statsAPI.getDailyStats();
-        const todayStats = dailyStats.find((d: any) => d.date === todayStr);
-        setLearnedToday(todayStats?.reviewCount || 0);
-      }
-    };
-    fetchLearnedToday();
-  }, [selectedDeck]);
-
-  const fetchDecks = async () => {
-    setLoading(true);
-    const deckList = await deckAPI.getDecks();
-    setDecks(deckList);
-    if (deckList.length > 0) {
-      setSelectedDeck(deckList[0]);
-      fetchDueCards(deckList[0]._id);
+    if (!loading) {
+      setShowSubCards(false);
+      const timer = setTimeout(() => setShowSubCards(true), 200);
+      return () => clearTimeout(timer);
     } else {
-      setDueCards([]);
-      setLoading(false);
+      setShowSubCards(false);
     }
-  };
+  }, [loading, selectedDeckId]);
 
   const fetchDueCards = async (deckId: string) => {
     setLoading(true);
     const cards = await deckAPI.getDeckDue(deckId);
     setDueCards(cards);
     setLoading(false);
-  };
-
-  const handleSelectDeck = (deck: Deck) => {
-    setSelectedDeck(deck);
-    fetchDueCards(deck._id);
-  };
-
-  const fetchDeck = async (deckId: string) => {
-    setLoading(true);
-    const deck = await deckAPI.getDeck(deckId);
-    setSelectedDeck(deck);
-    fetchDueCards(deckId);
-  };
-
-  const fetchStats = async () => {
-    try {
-      const overview = await statsAPI.getOverview();
-      setStats(overview);
-    } catch {}
   };
 
   const fetchNextDue = async () => {
@@ -186,8 +171,8 @@ const Dashboard: React.FC = () => {
         )}
       </div>
       {/* Các thông số nhỏ gọn bên dưới */}
-      {deckStats && (
-        <div className="grid grid-cols-2 gap-4 w-full max-w-md mb-6">
+      {deckStats && showSubCards && (
+        <div className="grid grid-cols-2 gap-4 w-full max-w-md mb-6 transition-all duration-500 opacity-100 translate-y-0">
           <div className="card flex flex-col items-center bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-100">
             <span className="text-2xl font-bold text-primary-500">{deckStats?.total || 0}</span>
             <span className="text-gray-500 dark:text-gray-300">Tổng số từ</span>

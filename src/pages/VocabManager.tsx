@@ -1,13 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { vocabAPI } from '../services/api.ts';
 import api from '../services/api.ts';
 import { Deck, UserVocabProgress } from '../types';
 import { useNavigate } from 'react-router-dom';
 import { SpeakerWaveIcon, ArrowDownTrayIcon, ChevronDownIcon } from '@heroicons/react/24/solid';
 import { deckAPI } from '../services/api.ts';
 import { useSelectedDeck } from '../hooks/useSelectedDeck.ts';
-import { FixedSizeList as List } from 'react-window';
-// XÓA: import InfiniteScroll from 'react-infinite-scroll-component';
 
 const PAGE_SIZE = 30;
 
@@ -24,7 +21,6 @@ const VocabManager: React.FC = () => {
   const navigate = useNavigate();
   const { setSelectedDeckId, selectedDeckId } = useSelectedDeck();
   const [displayedVocab, setDisplayedVocab] = useState<any[]>([]);
-  const [hasMore, setHasMore] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState<number | null>(null);
@@ -62,14 +58,6 @@ const VocabManager: React.FC = () => {
       const imported = data.filter(d => d.type === 'personal').map(d => d._id);
       setImportedDeckIds(imported);
     } catch {}
-  };
-
-  // Kiểm tra deck đã import chưa (deck cá nhân là đã import, deck shared thì phải có tiến trình học của user với deck đó)
-  const isDeckImported = async (deck: Deck) => {
-    if (deck.type === 'personal') return true;
-    // Kiểm tra tiến trình học của user với deck shared này
-    const progress = await deckAPI.getDeckProgress(deck._id);
-    return progress && progress.length > 0;
   };
 
   // Sửa lại dropdown render: dùng state để lưu deck nào đã import (dùng Promise.all để preload)
@@ -170,17 +158,8 @@ const VocabManager: React.FC = () => {
     if (selectedDeck) {
       const data = selectedDeck.type === 'shared' ? deckVocab : deckProgress;
       setDisplayedVocab(data); // Sửa: không slice theo PAGE_SIZE
-      setHasMore(data.length > PAGE_SIZE);
     }
   }, [deckVocab, deckProgress, selectedDeck]);
-
-  const fetchMoreVocab = () => {
-    const data = selectedDeck?.type === 'shared' ? deckVocab : deckProgress;
-    if (!data) return;
-    const next = data.slice(displayedVocab.length, displayedVocab.length + PAGE_SIZE);
-    setDisplayedVocab(prev => [...prev, ...next]);
-    setHasMore(displayedVocab.length + next.length < data.length);
-  };
 
   // Tính tổng số trang
   const totalPages = Math.ceil(displayedVocab.length / PAGE_SIZE);

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { VocabCard } from '../types';
-import api from '../services/api';
+import api from '../services/api.ts';
 
 interface FlashcardSRSProps {
   card: VocabCard;
@@ -39,7 +39,7 @@ const FlashcardSRS: React.FC<FlashcardSRSProps> = ({ card, onReview }) => {
   };
 
   return (
-    <div className="flashcard max-w-md mx-auto my-4">
+    <div className="rounded-2xl shadow-card p-10 border transition-all hover:shadow-lg bg-white dark:bg-neutral-800 border-primary-200 dark:border-neutral-700 max-w-md mx-auto my-4">
       <div className="text-2xl font-bold text-center mb-4 text-indigo-600">
         {card.word}
       </div>
@@ -65,22 +65,35 @@ const FlashcardSRS: React.FC<FlashcardSRSProps> = ({ card, onReview }) => {
               Mức độ nhớ:
             </div>
             <div className="flex justify-between gap-1">
-              {[0, 1, 2, 3, 4, 5].map((grade) => (
-                <button
-                  key={grade}
-                  className={`flex-1 py-2 rounded-full font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 text-white ${
-                    grade < 3 
-                      ? 'bg-secondary-400 hover:bg-secondary-500 focus:ring-secondary-300' 
-                      : 'bg-primary-500 hover:bg-primary-600 focus:ring-primary-400'
-                  }`}
-                  onClick={() => handleGrade(grade)}
-                >
-                  {grade}
-                </button>
-              ))}
+              <button
+                className="flex-1 py-2 rounded-full font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 text-white bg-red-500 hover:bg-red-600 focus:ring-red-300"
+                onClick={() => handleGrade(0)}
+              >
+                Lại
+              </button>
+              <button
+                className="flex-1 py-2 rounded-full font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 text-white bg-yellow-500 hover:bg-yellow-600 focus:ring-yellow-300"
+                onClick={() => handleGrade(2)}
+              >
+                Khó
+              </button>
+              <button
+                className="flex-1 py-2 rounded-full font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 text-white bg-primary-500 hover:bg-primary-600 focus:ring-primary-400"
+                onClick={() => handleGrade(3)}
+              >
+                Tốt
+              </button>
+              <button
+                className="flex-1 py-2 rounded-full font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 text-white bg-green-500 hover:bg-green-600 focus:ring-green-300"
+                onClick={() => handleGrade(4)}
+              >
+                Dễ
+              </button>
             </div>
             <div className="flex justify-between text-xs text-neutral-500 dark:text-neutral-300 mt-1 px-1">
+              <span>Lại</span>
               <span>Khó</span>
+              <span>Tốt</span>
               <span>Dễ</span>
             </div>
           </div>

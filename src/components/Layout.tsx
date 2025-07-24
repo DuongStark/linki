@@ -1,16 +1,18 @@
-import React, { useState } from 'react';
-import { Outlet, Link } from 'react-router-dom';
-import { useLocation } from 'react-router-dom';
+import React, { useState, useRef } from 'react';
+import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.tsx';
 import { useTheme } from '../contexts/ThemeContext.tsx';
 import { MoonIcon, SunIcon, Bars3Icon } from '@heroicons/react/24/solid';
 import { HomeIcon, BookOpenIcon, FolderIcon, ChartBarSquareIcon, CogIcon } from '@heroicons/react/24/outline';
+import { CSSTransition, SwitchTransition } from 'react-transition-group';
+import '../slide-transition.css';
 
 const Layout: React.FC = () => {
   const { state, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
+  const nodeRef = useRef(null);
 
   const navigation = [
     { name: 'Tổng quan', href: '/' },
@@ -96,7 +98,19 @@ const Layout: React.FC = () => {
         </div>
         <main className="flex-1 overflow-auto p-4">
           <div className="mx-auto max-w-7xl">
-            <Outlet />
+            <SwitchTransition>
+              <CSSTransition
+                key={location.pathname}
+                classNames="slide"
+                timeout={300}
+                nodeRef={nodeRef}
+                unmountOnExit
+              >
+                <div ref={nodeRef}>
+                  <Outlet />
+                </div>
+              </CSSTransition>
+            </SwitchTransition>
           </div>
         </main>
       </div>
