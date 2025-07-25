@@ -8,17 +8,18 @@ const Register: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [registered, setRegistered] = useState(false);
   const { state, register, clearError } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!state.loading && !state.error && state.error !== null) {
+    if (registered && !state.loading && !state.error) {
       setSuccess(true);
       setTimeout(() => {
         navigate('/login');
       }, 2000);
     }
-  }, [state.loading, state.error, navigate]);
+  }, [registered, state.loading, state.error, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,6 +32,7 @@ const Register: React.FC = () => {
     
     setPasswordError('');
     await register(email, password);
+    setRegistered(true);
   };
 
   return (

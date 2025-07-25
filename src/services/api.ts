@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { VocabCard, StatsOverview, DailyStats, Deck, UserVocabProgress } from '../types';
+import { UserVocabProgress, Deck } from '../types';
 declare var process: { env: { [key: string]: string } };
 // Tạo instance axios với cấu hình mặc định
 const api = axios.create({
@@ -39,60 +39,35 @@ export const authAPI = {
 
 // Vocab API
 export const vocabAPI = {
-  getAll: async (): Promise<VocabCard[]> => {
-    const response = await api.get('/vocab');
+  getAll: async (): Promise<any[]> => {
+    const response = await api.get('/vocab/shared');
     return response.data;
   },
-  create: async (vocabData: Partial<VocabCard>): Promise<VocabCard> => {
-    const response = await api.post('/vocab', vocabData);
+  create: async (vocabData: Partial<any>): Promise<any> => {
+    const response = await api.post('/vocab/shared', vocabData);
     return response.data;
   },
-  update: async (id: string, vocabData: Partial<VocabCard>): Promise<VocabCard> => {
-    const response = await api.put(`/vocab/${id}`, vocabData);
+  update: async (id: string, vocabData: Partial<any>): Promise<any> => {
+    const response = await api.put(`/vocab/shared/${id}`, vocabData);
     return response.data;
   },
   delete: async (id: string): Promise<{ success: boolean }> => {
-    const response = await api.delete(`/vocab/${id}`);
+    const response = await api.delete(`/vocab/shared/${id}`);
     return response.data;
   },
-  review: async (id: string, grade: number): Promise<VocabCard> => {
-    const response = await api.post(`/vocab/${id}/review`, { grade });
+  review: async (id: string, grade: number): Promise<UserVocabProgress> => {
+    const response = await api.post(`/vocab/progress/${id}/review`, { grade });
     return response.data;
   },
-  getDueCards: async (): Promise<VocabCard[]> => {
-    const now = new Date().toISOString();
-    const response = await api.get(`/vocab?dueDate=${now}`);
-    return response.data;
-  },
-  getAllDueCards: async (): Promise<VocabCard[]> => {
-    const response = await api.get('/vocab?allDue=true');
-    return response.data;
-  },
-  getNextDue: async (deckId?: string, deckType?: string): Promise<{ hours: number|null, minutes: number|null }> => {
-    let url = '/vocab/next-due';
-    if (deckId && deckType) {
-      url += `?deckId=${deckId}&deckType=${deckType}`;
-    }
-    const response = await api.get(url);
-    return response.data;
-  },
-  getAllCards: async (): Promise<VocabCard[]> => {
-    const response = await api.get('/vocab/all');
-    return response.data;
-  },
-  importShared: async (): Promise<{ message: string }> => {
-    const response = await api.post('/vocab/import-shared');
-    return response.data;
-  }
 };
 
 // Stats API
 export const statsAPI = {
-  getOverview: async (): Promise<StatsOverview> => {
+  getOverview: async (): Promise<any> => {
     const response = await api.get('/stats');
     return response.data;
   },
-  getDailyStats: async (): Promise<DailyStats[]> => {
+  getDailyStats: async (): Promise<any[]> => {
     const response = await api.get('/stats/daily');
     return response.data;
   }
@@ -130,8 +105,8 @@ export const deckAPI = {
     const response = await api.get('/vocab/decks');
     return response.data;
   },
-  importDeck: async (deckId: string): Promise<{ message: string }> => {
-    const response = await api.post(`/vocab/decks/import/${deckId}`);
+  getDeck: async (deckId: string): Promise<Deck> => {
+    const response = await api.get(`/vocab/decks/${deckId}`);
     return response.data;
   },
   getDeckProgress: async (deckId: string): Promise<UserVocabProgress[]> => {
@@ -142,17 +117,17 @@ export const deckAPI = {
     const response = await api.get(`/vocab/decks/${deckId}/vocab`);
     return response.data;
   },
+  importDeck: async (deckId: string): Promise<{ message: string }> => {
+    const response = await api.post(`/vocab/decks/import/${deckId}`);
+    return response.data;
+  },
   getDeckDue: async (deckId: string): Promise<UserVocabProgress[]> => {
     const response = await api.get(`/vocab/decks/${deckId}/due`);
     return response.data;
   },
-  getDeckDueCount: async (deckId: string): Promise<{ count: number }> => {
-    const response = await api.get(`/vocab/decks/${deckId}/due?count=true`);
-    return response.data;
-  },
-  getDeck: async (deckId: string): Promise<Deck> => {
-    const response = await api.get(`/vocab/decks/${deckId}`);
-    return response.data;
+  getLearningCount: async (deckId: string): Promise<number> => {
+    const response = await api.get(`/vocab/decks/${deckId}/learning-count`);
+    return response.data.count;
   },
 };
 

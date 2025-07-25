@@ -1,24 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { vocabAPI, statsAPI, deckAPI } from '../services/api.ts';
-import { StatsOverview, Deck, UserVocabProgress } from '../types';
+import { StatsOverview, UserVocabProgress } from '../types';
 import { useSelectedDeck } from '../hooks/useSelectedDeck.ts';
+import { motion } from 'framer-motion';
 
 const Dashboard: React.FC = () => {
-  const [selectedDeck, setSelectedDeck] = useState<Deck | null>(null);
+  // Đổi Deck thành any (hoặc object phù hợp)
+  const [selectedDeck, setSelectedDeck] = useState<any | null>(null);
   const [dueCards, setDueCards] = useState<UserVocabProgress[]>([]);
   const [loading, setLoading] = useState(true);
-  const [nextDue, setNextDue] = useState<{ hours: number|null, minutes: number|null } | null>(null);
-  const { selectedDeckId } = useSelectedDeck();
   const [stats, setStats] = useState<StatsOverview | null>(null);
   const [deckStats, setDeckStats] = useState<{ total: number, studied: number, mastered: number, dueToday: number } | null>(null);
   const [learnedToday, setLearnedToday] = useState(0);
-  const [showSubCards, setShowSubCards] = useState(false);
+  const { selectedDeckId } = useSelectedDeck();
 
   // Gom các API call chính thành một Promise.all
   useEffect(() => {
     if (!selectedDeckId) return;
     setLoading(true);
+    setDeckStats(null); // Reset để đảm bảo hiệu ứng luôn chạy
     Promise.all([
       deckAPI.getDeck(selectedDeckId),
       deckAPI.getDeckDue(selectedDeckId),
@@ -30,14 +31,6 @@ const Dashboard: React.FC = () => {
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [selectedDeckId]);
-
-  // Chỉ gọi fetchNextDue khi selectedDeck thay đổi
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (selectedDeck) {
-      fetchNextDue();
-    }
-  }, [selectedDeck]);
 
   // Chỉ gọi fetchLearnedToday khi selectedDeck hoặc stats thay đổi
   useEffect(() => {
@@ -74,7 +67,9 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     const onFocus = () => {
-      if (selectedDeckId) fetchNextDue();
+      if (selectedDeckId) {
+        // Xóa nextDue và fetchNextDue
+      }
     };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
@@ -86,7 +81,14 @@ const Dashboard: React.FC = () => {
       if (selectedDeck.type === 'shared') {
         // Lấy tổng số từ của deck shared
         const vocab = await deckAPI.getDeckVocab(selectedDeck._id);
-        setDeckStats({ total: vocab.length, studied: 0, mastered: 0, dueToday: 0 });
+        // Lấy tiến trình học của user với deck shared này
+        const progress = await deckAPI.getDeckProgress(selectedDeck._id);
+        // Số đã học: số từ có reviewHistory.length > 0
+        const studied = progress.filter((p: any) => p.reviewHistory && p.reviewHistory.length > 0).length;
+        // Số đến hạn hôm nay: srs.state==='review' && srs.dueDate <= hôm nay
+        const now = new Date();
+        const dueToday = progress.filter((p: any) => p.srs && p.srs.state === 'review' && p.srs.dueDate && new Date(p.srs.dueDate) <= now).length;
+        setDeckStats({ total: vocab.length, studied, mastered: 0, dueToday });
       } else {
         // Deck cá nhân, lấy stats như cũ
         setDeckStats({
@@ -100,16 +102,6 @@ const Dashboard: React.FC = () => {
     fetchDeckStats();
   }, [selectedDeck, stats]);
 
-  useEffect(() => {
-    if (!loading) {
-      setShowSubCards(false);
-      const timer = setTimeout(() => setShowSubCards(true), 200);
-      return () => clearTimeout(timer);
-    } else {
-      setShowSubCards(false);
-    }
-  }, [loading, selectedDeckId]);
-
   const fetchDueCards = async (deckId: string) => {
     setLoading(true);
     const cards = await deckAPI.getDeckDue(deckId);
@@ -117,13 +109,15 @@ const Dashboard: React.FC = () => {
     setLoading(false);
   };
 
-  const fetchNextDue = async () => {
-    try {
-      if (!selectedDeck) return;
-      const res = await vocabAPI.getNextDue(selectedDeck._id, selectedDeck.type);
-      setNextDue(res);
-    } catch {}
-  };
+  // Polling tự động cập nhật số từ cần học mỗi 30s
+  useEffect(() => {
+    if (!selectedDeckId) return;
+    const interval = setInterval(() => {
+      fetchDueCards(selectedDeckId);
+      // Có thể fetch thêm stats nếu muốn cập nhật các số liệu khác
+    }, 30000); // 30 giây
+    return () => clearInterval(interval);
+  }, [selectedDeckId]);
 
   if (loading) {
     return (
@@ -162,37 +156,36 @@ const Dashboard: React.FC = () => {
           Học ngay
         </Link>
         {/* Thông báo thời gian còn lại cho từ tiếp theo */}
-        {!loading && dueCards.length === 0 && (
-          <div className="mt-4 text-center text-sm text-gray-500">
-            {nextDue && (nextDue.hours !== null || nextDue.minutes !== null)
-              ? `Thẻ tiếp theo sẽ xuất hiện sau${nextDue.hours !== null && nextDue.hours > 0 ? ` ${nextDue.hours} giờ` : ''}${nextDue.minutes !== null && nextDue.minutes > 0 ? ` ${nextDue.minutes} phút` : ''} nữa.`
-              : 'Bạn đã hoàn thành hết các thẻ hôm nay!'}
-          </div>
-        )}
+        {/* Xóa đoạn UI hiển thị thông báo thời gian còn lại cho từ tiếp theo */}
       </div>
       {/* Các thông số nhỏ gọn bên dưới */}
-      {deckStats && showSubCards && (
-        <div className="grid grid-cols-2 gap-4 w-full max-w-md mb-6 transition-all duration-500 opacity-100 translate-y-0">
-          <div className="card flex flex-col items-center bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-100">
-            <span className="text-2xl font-bold text-primary-500">{deckStats?.total || 0}</span>
-            <span className="text-gray-500 dark:text-gray-300">Tổng số từ</span>
+      {deckStats && (
+        <motion.div
+          className="grid grid-cols-2 gap-4 w-full max-w-md mb-6"
+          initial={{ opacity: 0, y: 32 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+        >
+          <div className="card flex flex-col items-center justify-center text-center bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-100 p-4 gap-1">
+            <span className="text-2xl font-bold text-primary-500 mb-1">{deckStats?.total || 0}</span>
+            <span className="text-gray-500 dark:text-gray-300 text-sm">Tổng số từ</span>
           </div>
-          <div className="card flex flex-col items-center bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-100">
-            <span className="text-2xl font-bold text-blue-500">{deckStats?.studied || 0}</span>
-            <span className="text-gray-500 dark:text-gray-300">Đã học</span>
+          <div className="card flex flex-col items-center justify-center text-center bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-100 p-4 gap-1">
+            <span className="text-2xl font-bold text-blue-500 mb-1">{deckStats?.studied || 0}</span>
+            <span className="text-gray-500 dark:text-gray-300 text-sm">Đã học</span>
           </div>
-          <div className="card flex flex-col items-center bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-100">
-            <span className="text-2xl font-bold text-green-600 flex items-center">
+          <div className="card flex flex-col items-center justify-center text-center bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-100 p-4 gap-1">
+            <span className="text-2xl font-bold text-green-600 flex items-center mb-1">
               {deckStats?.mastered || 0}
               <svg className="h-5 w-5 ml-1 text-green-400" fill="currentColor" viewBox="0 0 20 20"><path d="M10 15l-5.878 3.09 1.122-6.545L.488 6.91l6.561-.955L10 0l2.951 5.955 6.561.955-4.756 4.635 1.122 6.545z"/></svg>
             </span>
-            <span className="text-gray-500 dark:text-gray-300">Đã thuộc</span>
+            <span className="text-gray-500 dark:text-gray-300 text-sm">Đã thuộc</span>
           </div>
-          <div className="card flex flex-col items-center bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-100">
-            <span className="text-2xl font-bold text-orange-500">{learnedToday}</span>
-            <span className="text-gray-500 dark:text-gray-300">Đã học hôm nay</span>
+          <div className="card flex flex-col items-center justify-center text-center bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-100 p-4 gap-1">
+            <span className="text-2xl font-bold text-orange-500 mb-1">{deckStats?.dueToday || 0}</span>
+            <span className="text-gray-500 dark:text-gray-300 text-sm">Từ đến hạn hôm nay</span>
           </div>
-        </div>
+        </motion.div>
       )}
     </div>
   );

@@ -24,17 +24,8 @@ export interface SRSData {
   repetitions: number;
   easeFactor: number;
   dueDate: string;
-}
-
-export interface VocabCard {
-  _id: string;
-  word: string;
-  meaning: string;
-  example: string;
-  audio?: string;
-  phonetic?: string;
-  srs: SRSData;
-  reviewHistory: ReviewHistory[];
+  state: 'new' | 'learning' | 'review';
+  learningStepIndex: number;
 }
 
 // Stats Types
@@ -60,15 +51,6 @@ export interface NotificationSettings {
   reminderTime: string;
 }
 
-export interface Deck {
-  _id: string;
-  name: string;
-  type: 'shared' | 'personal';
-  owner?: string;
-  description?: string;
-  tags?: string[];
-}
-
 export interface UserVocabProgress {
   _id: string;
   word: string;
@@ -78,8 +60,20 @@ export interface UserVocabProgress {
   phonetic?: string;
   image?: string;
   tags?: string[];
+  definition?: string;
+  pos?: string;
   srs: SRSData;
   reviewHistory: ReviewHistory[];
   vocabId: string;
   deck: string;
+}
+
+// Deck Types
+export interface Deck {
+  _id: string;
+  name: string;
+  type: 'shared' | 'personal';
+  description?: string;
+  createdAt?: string;
+  updatedAt?: string;
 } 
